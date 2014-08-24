@@ -1,0 +1,99 @@
+---
+title: "Prediction Assignment"
+author: "By rrr"
+date: "Sunday, August 24, 2014"
+output: html_document
+---
+## Synopsis
+A Random Forest algorithm is implemented so as to predict the movement performed by individuals who follow a given exercise routine. It is shown that after removing low variability as well as low correlated predictors, a model can be proposed with 23 independent variables with an accuracy of 98.02%.
+
+## Getting and Cleaning Data
+The data for this project comes from the source <http://groupware.les.inf.puc-rio.br/har>. First, the training and test data sets are downloaded,
+
+```{r, cache = TRUE, warning = FALSE, message=FALSE}
+# Download training data set.
+library(RCurl)
+url_train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(url_train, destfile = "train.csv",method="curl")
+# Download test data set.
+url_test <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url_test, destfile = "test.csv",method="curl")
+# Read training and test data sets.
+train <- read.csv("train.csv")
+test  <- read.csv("test.csv") 
+```
+The columns `X`, `cvtd_timestamp`, as well as `classe` in the training data set represent the observation number, the corresponding timestamp and the variable to predict respectively. Therefore, the number of candidate predictors and of observations are given by,
+
+```{r, cache = TRUE, warning = FALSE, message=FALSE}
+# Number of candidate predictors.
+num_candidate_predictors <- ncol(train)-3; num_candidate_predictors
+# Number of observations.
+num_observations <- nrow(train); num_observations
+```
+The next step is to determine the predictors to be used so as to build the machine learning algorithm.
+
+## Cross Validation and Prediction Model
+Let us define a new `training` data set from the `train` data. We use 70% of the total number of observations,
+
+```{r,cache = TRUE,warning = FALSE,message = FALSE}
+# Load caret package and set seed to be used.
+library(caret)
+set.seed(1981)
+# Randomly select 70% of the training observations.
+inTrain <- createDataPartition(y = train$classe, p=0.7,list=FALSE)
+train1  <- train[inTrain,]
+```
+As seen before, there are `r num_candidate_predictors` potential predictors. First, we can identify and discard the variables with very little variability. Second, we can analyse the correlation between the numerical variables of the new set of predictors. This procedure is implemented as follows,  
+```{r,cache = TRUE,warning = FALSE,message = FALSE}
+# First: Detect problematic predictors,i.e. those with low variability.
+nsv <- nearZeroVar(train1,saveMetrics=FALSE)
+# Remove problematic predictors along with columns 1 & 5 from the new training data set, i.e."X" and "cvtd_timestamp" respectively (as they do not represent variables).
+train1 <- train1[,-c(1,5,nsv)]
+# Second: Correlated numerical predictors are detected. Factor variables "user_name", as well as outcome "classe" are not considered in this analysis.
+M <- abs(cor(train1[,-c(1,103)]))
+diag(M) <- 0
+# Select numerical predictors with a correlation, with respect to the data set, greater than 0.8.
+cor <- which(M > 0.8,arr.ind=T)
+numerical_predictors <- unique(rownames(cor))
+# Create a new tidy training data set with these predictors.
+train1 <- train1[,c("user_name",numerical_predictors,"classe")]
+str(train1)
+```
+As shown, we now have a training data set with 24 variables (one corresponds to the `classe` dependent variable) and 13737observations. The analysis made on the data has removed predictors with low variability, as well as variables with a correlation, with respect to the data set, of less than 0.8. This strategy yields a new training data set which can be used to build our prediction model.
+
+As our target outcome,i.e. `classe`, represents a categorical dependent multivariate variable, then we can use a high performance algorithm such as `Random Forest`. Therefore, based on our new training set, let us define our prediction model as follows,
+
+```{r,cache = TRUE,warning = FALSE,message = FALSE}
+# Use randomForest library to build the machine learning algorithm.
+library(randomForest)
+model <- randomForest(classe ~ ., data=train1)
+```
+The `randomForest` package performs cross validation on the set of predictors defined. Therefore, we can check the OBB estimate error rate and the confusion matrix in order to check both cross validation accuracy and model fit, 
+
+```{r,cache = TRUE,warning = FALSE,message = FALSE}
+model
+```
+The OOB error value for the model is around 1.98%. This suggests that the proposed model has 98.02% out of sample accuracy for the training set. In addition, the confusion matrix as well as the error rates depicted in `Figure1` confirm these results.
+```{r fig.width=5,fig.height=5}
+boxplot.matrix(model$err.rate,use.cols=TRUE,notch=TRUE,xlab="OOB/Outcome",y="Error rate",main = "Figure 1. Error rates Random Forest Model")
+```
+
+Now, we can use our model to predict the outcome for the test set previously downloaded.
+
+## Predicting on the test data set
+We predict the outcome for our test data set as follows,
+```{r,cache = TRUE, message = FALSE}
+# The test data set is prepared for prediction.
+test1 <- test[,c("user_name",numerical_predictors)]
+# The prediction is performed.
+predictions <- predict(model,test1)
+```
+Therefore, for a test data set with 20 observations, the predicted output is,
+
+```{r,cache = TRUE, message = FALSE}
+predictions
+```
+
+In summary, the proposed model with 23 variables represents a suitable prediction tool for the categorical data `classe`, where the random forest algorithm exhibits a low error rate,i.e. a high accuracy on the outcome (`98.02%`).
+
+
